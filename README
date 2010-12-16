@@ -1,0 +1,14 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=3371
+
+hdl_plugin is a plugin that enables you to generate testbench of vhdl entities and compile by modelsim convenient.
+
+
+main function:
+Add a menu for vim :
+Add File Header
+Add Content
+Process Build
+Vhdl Entity Build
+Vhdl Component Build:Creat a window to display the Component information,and add these to clipboard
+Vhdl Testbench for Vhdl:Generate a vhdl testbench file of this vhdl file
+Verilog Testbench for Vhdl:generate a verilog Testbench file of this vhdl file 
