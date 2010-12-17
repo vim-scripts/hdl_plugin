@@ -6,7 +6,7 @@
 " Last Modified      : 2010-12-08 14:07
 " Update Count       : 2010-11-02 13:17
 " Description        : vhdl/verilog plugin
-" Version            : v1.7
+" Version            : v1.8
 "
 " history            :  v1.0    创建该插件，实现编译，加入注释，文件头等功能 
 "                       v1.1    加入函数Component_Build() 可以实现垂直分割窗口
@@ -28,6 +28,7 @@
 "                               不定义 g:RightB_Commponent  则水平分割打开
 "                               g:RightB_Commponent = 1 原文件右侧垂直打开
 "                               g:RightB_Commponent = 0 原文件左侧垂直打开
+"                       v1.8    修改了一些错误
 "
 "                                   
 "
@@ -43,8 +44,9 @@ nmenu HDL.Add\ Content<Tab>vc                    :Acontent<CR>
 nmenu HDL.Process\ Build<Tab>va                  :ProBuild<CR>
 nmenu HDL.Vhdl\ Entity\ Build<Tab>ve             :VhdlEntity<CR>
 nmenu HDL.Vhdl\ Component\ Build<Tab>:CompoB     :CompoB<CR> 
-nmenu HDL.Vhdl\ Testbench\ for\ Vhdl<Tab>:TbVHDVhdl  :TbVHDVhdl<CR>
-nmenu HDL.Verilog\ Testbench\ for\ Vhdl<Tab>:TbVHDVerilog    :TbVHDVerilog<CR>
+nmenu HDL.Verilog\ Instant\ for\ VHDL<Tab>:InstantV     :InstantV<CR>
+nmenu HDL.Vhdl\ Testbench\ for\ VHDL<Tab>:TbVHDVhdl     :TbVHDVhdl<CR>
+nmenu HDL.Verilog\ Testbench\ for\ VHDL<Tab>:TbVHDVerilog    :TbVHDVerilog<CR>
 
 command     AddInfo     :call AddFileInformation()
 command     Acontent    :call AddContent()
@@ -52,6 +54,7 @@ command     ProBuild    :call Always_Process_Build("posedge", "posedge")
 command     VhdlEntity  :call Module_Entity_Build()
 command     ModSimComp  :call Model_Sim_Compile()
 command     CompoB      :call Component_Build("vhdl") 
+command     InstantV    :call Component_Build("verilog")
 command     TbVHDVhdl   :call Tb_Vhdl_Build("vhdl")
 command     TbVHDVerilog :call Tb_Vhdl_Build("verilog")
 
@@ -757,11 +760,11 @@ function Tb_Vhdl_Build(type)
                     \."\t\twait for clk_period/2;\n\tend process;\n\n"
         let simulus_part = "\t-- Stimulus process\n\tprocess\n\tbegin\n\t\t-- hold reset state for 100 ns\n"
                     \."\t\twait for 100 ns;\n\t\trst <= '0';\n\n\t\twait for 10000 ns;\n\n"
-                    \."\t\t-- Add stimulus here\n\n\tend process;\n\nend behavior\n"
+                    \."\t\t-- Add stimulus here\n\n\tend process;\n\nend behavior;\n"
     elseif a:type == "verilog"
         let tb_file_name = "tb_".s:ent_name.".v"
         let entity_part = ''
-        let architecture_part = "module".tb_ent_name.";\n\n"
+        let architecture_part = "module ".tb_ent_name.";\n\n"
         let constant_part = ''
         let clock_part = "\t// Clock generate \n\talways #32 ".clk."<= ~".clk.";\n\n"
         let simulus_part = "\tinitial begin\n\t\t// Initialize Inputs\n"
