@@ -4,11 +4,18 @@ hdl_plugin is a plugin that enables you to generate testbench of vhdl entities a
 
 
 main function:
+create a library 
+compile file
 Add a menu for vim :
 Add File Header
 Add Content
 Process Build
 Vhdl Entity Build
 Vhdl Component Build:Creat a window to display the Component information,and add these to clipboard
+Verilog Instant for Vhdl: Instant Vhdl entity in verilog top 
 Vhdl Testbench for Vhdl:Generate a vhdl testbench file of this vhdl file
 Verilog Testbench for Vhdl:generate a verilog Testbench file of this vhdl file 
+
+view details:http://www.cnblogs.com/ifys/archive/2010/11/20/1882673.html#
+e-mail: achillowy@163.com
+Welcome to post your suggestions to me.
