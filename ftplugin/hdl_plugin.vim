@@ -5,7 +5,7 @@
 " Created On         : 2010-11-02 13:17
 " Last Modified      : 2010-12-08 14:07
 " Description        : vhdl/verilog plugin
-" Version            : v1.9
+" Version            : v2.0
 "
 " history            :  v1.0    创建插件，实现编译，加入注释，文件头等功能 
 "                       v1.1    加入函数Component_Build() 可以实现垂直分割窗口
@@ -41,6 +41,7 @@
 "                               6 菜单中加入compile file 默认快捷键为<F7>
 "                               7 菜单中加入vlib work 默认快捷键为<F6>
 "                                   需要安装modelsim。windows下需设置环境变量PATH=$ModelSim\win32
+"                       v2.0    现在可以支持同一行多个port了
 "                               
 "                               
 "
@@ -74,7 +75,7 @@ command     ModSimComp  :call Model_Sim_Compile()
 command     CompoB      :call Component_Build("vhdl")
 command     InstantV    :call Component_Build("verilog")
 command     TbVHDVhdl   :call Tb_Vhdl_Build("vhdl")
-command     TbVHDVerilog :call Tb_Vhdl_Build("verilog")
+command     TbVHDVerilog    :call Tb_Vhdl_Build("verilog")
 
 nmap <silent><F7> :ModSimComp<CR><CR>
 nmap <silent><F6> <Esc>:!vlib work<CR><CR>
@@ -358,9 +359,9 @@ endfunction
 "Decription  : get position and port map of the entity 
 "------------------------------------------------------------------------
 function Get_Information_Of_Entity()
-"    保存初始位置，entity读取完成跳转回来
+    " 保存初始位置，entity读取完成跳转回来
     exe "ks"
-"    Get the entity position
+    " Get the entity position
     let first_line = search('\<entity\>.*\<is\>','w')
     if first_line == 0
         echo "Can't Find Start Entity."
@@ -371,11 +372,11 @@ function Get_Information_Of_Entity()
         echo "Can't Find End Entity."
         return 0
     endif
-"    entity name 
+    " entity name 
     let line = getline(first_line)
     let s:ent_name = substitute(line,'^\s*\<entity\>\s*',"","")
     let s:ent_name = substitute(s:ent_name,'\s*\<is\>.*$',"","")
-"    端口的首行和末行
+    " 端口的首行和末行
     call cursor(first_line,1)
     let port_start_line = search('\<port\>','W',last_line)
     let i = 1
@@ -390,7 +391,7 @@ function Get_Information_Of_Entity()
     call search('(','W')
     exe "normal %"
     let port_last_line = line('.')
-"    检查generic的首行和末行
+    " 检查generic的首行和末行
     call cursor(first_line,1)
     let s:generic_start_line = search('\<generic\>','W',last_line)
     if getline(line('.')) =~ '^\s*--' 
@@ -403,7 +404,7 @@ function Get_Information_Of_Entity()
         let s:generic_count = 0
         call Get_Generic_Port(s:generic_start_line,generic_last_line)
     endif
-"    设置3个List来存放端口的信息
+    " 设置3个List来存放端口的信息
     let s:port_cout = 0
     let s:port = []
     let s:type = []
@@ -411,32 +412,32 @@ function Get_Information_Of_Entity()
     let i = port_start_line
     while i <= port_last_line
         let line = getline(i)
-"    将最后的;和最后一行的);去掉
+        " 将行尾的;和最后一行的);去掉
         if i == port_last_line
             let line = substitute(line,'\s*)\s*;.*$',"","")
         else 
             let line = substitute(line,'\s*;.*$',"","")
         endif
-"        注释行跳过
+        " 注释行跳过
         if line =~ '^\s*--.*$'
             let i = i + 1
             continue
         endif
-"        s:port和signal在一行时删去s:port(
+        " port和signal在一行时删去port(
         if line =~ '^\s*\<port\>\s*(.*'
-            let line = substitute(line,'\s*\<port\>\s*(\s*',"","")
+            let line = substitute(line,'^\s*\<port\>\s*(\s*',"","")
         endif
-"        (和signal在一行时删去(
+        " 行首的(删掉
         if line =~ '^\s*(.*$'
-            let line = substitute(line,'\s*(\s*',"","")
+            let line = substitute(line,'^\s*(\s*',"","")
         endif
-"        行尾有注释 应先删去
+        " 行尾有注释 先删去
         if line =~ '^.*--.*$'
             let line = substitute(line,'--.*$',"","")
         endif
-"        删掉行首的空格
+        " 删掉行首的空格
         let line = substitute(line,'^\s*',"","")
-"        将信号按顺序存在list列表中
+        " 将信号按顺序存在list列表中
         if line =~ '^.*:\s*\<in\>.*$' || line =~ '^.*:\s*\<out\>.*$'
             let port_t = substitute(line,'\s*:.*$',"","")
             if line =~ ':\s*\<in\>' 
@@ -446,12 +447,38 @@ function Get_Information_Of_Entity()
                 let direction_t = "out"
                 let type_t = substitute(line,'^.*:\s*\<out\>\s*',"","")
             endif
-"            let type_t = substitute(type_t,'\s*;\s*',"","")
-"            let type_t = substitute(type_t,')\s*)',")","")
-            call add(s:port,port_t)
-            call add(s:direction,direction_t)
-            call add(s:type,type_t)
-            let s:port_cout = s:port_cout + 1
+            " 如果多个port在同一行
+            if port_t =~ ','
+                let port_t = substitute(port_t,'\s*',"","")
+                let comma_pos = [-1]
+                let j = 1
+                while 1
+                    let last_comma = stridx(port_t,",",comma_pos[j-1]+1)
+                    call add(comma_pos,last_comma)
+                    if comma_pos[j] == -1
+                        break
+                    endif
+                    let j = j + 1
+                endwhile  
+                let k = 0
+                while k < j 
+                    if k == j - 1
+                        call add(s:port,strpart(port_t,comma_pos[k]+1))
+                    else
+                        call add(s:port,strpart(port_t,comma_pos[k]+1,comma_pos[k+1]-comma_pos[k]-1))
+                    endif
+                    call add(s:direction,direction_t)
+                    call add(s:type,type_t)
+                    let s:port_cout = s:port_cout + 1
+                    let k = k + 1
+                endwhile
+            else
+                " 将端口信息存于List中
+                call add(s:port,port_t)
+                call add(s:direction,direction_t)
+                call add(s:type,type_t)
+                let s:port_cout = s:port_cout + 1
+            endif
         else 
             let i = i + 1
             continue
@@ -459,7 +486,7 @@ function Get_Information_Of_Entity()
         let i = i + 1
     endwhile
 
-"    跳转回刚刚标记的地方
+    " 跳转回刚刚标记的地方
     exe "'s"
     return 1
 endfunction
@@ -477,24 +504,26 @@ function Get_Generic_Port(start_line,last_line)
     let i = a:start_line
     while i <= a:last_line
         let line = getline(i)
+        " 空格先删掉
+        let line = substitute(line,'\s*',"","")
         " 注释行跳过
-        if line =~ '^\s*--.*$'
+        if line =~ '^--.*$'
             let i = i + 1
             continue
         endif
         " 将最后的;和最后一行的);去掉
         if i == a:last_line
-            let line = substitute(line,'\s*)\s*;.*$',"","")
+            let line = substitute(line,');.*$',"","")
         else 
-            let line = substitute(line,'\s*;.*$',"","")
+            let line = substitute(line,';.*$',"","")
         endif
         " generic和port在一行时删去generic(
-        if line =~ '^\s*\<generic\>\s*(.*'
-            let line = substitute(line,'\s*\<generic\>\s*(\s*',"","")
+        if line =~ '^\<generic\>(.*'
+            let line = substitute(line,'\<generic\>(',"","")
         endif
         " (和port在一行时删去(
-        if line =~ '^\s*(.*$'
-            let line = substitute(line,'\s*(\s*',"","")
+        if line =~ '^(.*$'
+            let line = substitute(line,'(',"","")
         endif
         " 行尾有注释 应先删去
         if line =~ '^.*--.*$'
@@ -505,8 +534,6 @@ function Get_Generic_Port(start_line,last_line)
         if pos_1 != -1
             let pos_2 = stridx(line,":=")
             let generic_port_t = strpart(line,0,pos_1)
-            let generic_port_t = substitute(generic_port_t,'^\s*',"","")
-            let generic_port_t = substitute(generic_port_t,'\s*$',"","")
             if pos_2 == -1 "没有初值的情况
                 let generic_type_t = strpart(line,pos_1+1)
                 let generic_value_t = ""
@@ -514,11 +541,6 @@ function Get_Generic_Port(start_line,last_line)
                 let generic_type_t = strpart(line,pos_1+1,pos_2-pos_1-1)
                 let generic_value_t = strpart(line,pos_2+2)
             endif
-
-            let generic_value_t = substitute(generic_value_t,'^\s*',"","")
-            let generic_value_t = substitute(generic_value_t,'\s*$',"","")
-            let generic_type_t = substitute(generic_type_t,'^\s*',"","")
-            let generic_type_t = substitute(generic_type_t,'\s*$',"","")
             let s:generic_count = s:generic_count + 1
             call add(s:generic_port,generic_port_t)
             call add(s:generic_value,generic_value_t)
@@ -969,7 +991,7 @@ function Tb_Vhdl_Build(type)
                     \."\t\twait for clk_period/2;\n\tend process;\n\n"
         let simulus_part = "\t-- Stimulus process\n\tprocess\n\tbegin\n\t\t-- hold reset state for 100 ns\n"
                     \."\t\twait for 100 ns;\n\t\trst <= '0';\n\n\t\twait for 10000 ns;\n\n"
-                    \."\t\t-- Add stimulus here\n\n\tend process;\n\nend behavior;\n"
+                    \."\t\t-- Add stimulus here\n\n\t\twait;\n\tend process;\n\nend behavior;\n"
     elseif a:type == "verilog"
         let tb_file_name = "tb_".s:ent_name.".v"
         let entity_part = ''
@@ -986,7 +1008,7 @@ function Tb_Vhdl_Build(type)
             let i = i + 1
         endwhile
         let simulus_part = simulus_part."\n\t\t// Wait 100 ns for global reset to finish\n"
-                    \."\t\t#100;\n\n\t\t// Add stimulus here\n\n\tend\n\nendmodule\n"
+                    \."\t\t#100;\n\t\trst = 0;\n\n\t\t// Add stimulus here\n\n\tend\n\nendmodule\n"
     endif
      "    component part
     let component_part = Component_Part_Build(a:type)
@@ -1023,10 +1045,10 @@ function Tb_Vhdl_Build(type)
     exe "bel sp ".tb_file_name
     silent put! =all_part
     exe "AddInfo"
-    exe "up"
-    if search('\<rst\>.*\<= 0\>') != 0
+    if search('\<rst\>.*=') != 0
         exe "normal f0r1"
     endif
+    exe "up"
     call search("Add stimulus here")
 endfunction
 
@@ -1048,7 +1070,6 @@ autocmd BufWritePre,FileWritePre *.v   ks|call LastModified()|'s
 "------------------------------------------------------------------------------
 function CloseComponetFiles()
     if bufloaded("__Instant_File__") 
-"        let buf_num = bufnr("__Instant_File__")
         if bufloaded(g:TagList_title)
             exe "bdelete! __Instant_File__" 
         else
@@ -1058,13 +1079,4 @@ function CloseComponetFiles()
     endif 
 endfunction
 autocmd BufUnload   *.vhd call CloseComponetFiles() 
-
-
-function ResetVdhlwindow()
-"    let win_num = bufwinnr(s:buf_num)
-    exe "wincmd h"
-    exe "vertical resize 125"
-endfunction
-
-"autocmd BufUnload __Instant_File__ call ResetVdhlwindow()
 
