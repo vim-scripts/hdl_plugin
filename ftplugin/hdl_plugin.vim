@@ -5,7 +5,7 @@
 " Created On         : 2010-11-02 13:17
 " Last Modified      : 2010-12-08 14:07
 " Description        : vhdl/verilog plugin
-" Version            : v2.0
+" Version            : v2.1
 "
 " history            :  v1.0    创建插件，实现编译，加入注释，文件头等功能 
 "                       v1.1    加入函数Component_Build() 可以实现垂直分割窗口
@@ -42,13 +42,29 @@
 "                               7 菜单中加入vlib work 默认快捷键为<F6>
 "                                   需要安装modelsim。windows下需设置环境变量PATH=$ModelSim\win32
 "                       v2.0    现在可以支持同一行多个port了
-"                               
-"                               
+"                       v2.1    支持inout端口
+"                               支持verilog模块，可为verilog模块生成testbench和instant
 "
+"    hdl_plugin is a plugin that enables you to fast instant and generate a testbench file.
+"    it can help you to compile by modelsim convenient.
 "
-"
-"                                   
-"
+
+"    main function:
+"    Add a menu for vim:
+"    create a library 
+"    Compile file
+"    Add File Header
+"    Add Content
+"    Process
+"    Module/Entity
+"    Vhdl Component:Creat a window to display the Component information,and add these to clipboard
+"    Verilog Instant : Fast instant for verilog.Also add to clipboard
+"    Vhdl Testbench :Generate a vhdl testbench file 
+"    Verilog Testbench :Generate a verilog testbench file
+
+"    view details:http://www.cnblogs.com/ifys/archive/2010/11/20/1882673.html#
+"    e-mail: achillowy@163.com
+"    Welcome to post your suggestions to me.
 "                      
 "------------------------------------------------------------------------------
 if exists('b:hdl_plugin') || &cp || version < 700
@@ -60,12 +76,12 @@ nmenu HDL.Create\ a\ Library<Tab>F6             <Esc>:!vlib work<CR><CR>
 nmenu HDL.Compile\ File<Tab>F7                  :ModSimComp<CR><CR>
 nmenu HDL.Add\ File\ Header<Tab>:AddInfo        :AddInfo<CR>
 nmenu HDL.Add\ Content<Tab>:Acontent            :Acontent<CR>
-nmenu HDL.Process\ Build<Tab>:ProBuild          :ProBuild<CR>
-nmenu HDL.Vhdl\ Entity\ Build<Tab>:VhdlEntity   :VhdlEntity<CR>
-nmenu HDL.Vhdl\ Component\ Build<Tab>:CompoB    :CompoB<CR> 
-nmenu HDL.Verilog\ Instant\ for\ VHDL<Tab>:InstantV     :InstantV<CR>
-nmenu HDL.Vhdl\ Testbench\ for\ VHDL<Tab>:TbVHDVhdl     :TbVHDVhdl<CR>
-nmenu HDL.Verilog\ Testbench\ for\ VHDL<Tab>:TbVHDVerilog    :TbVHDVerilog<CR>
+nmenu HDL.Process<Tab>:ProBuild                 :ProBuild<CR>
+nmenu HDL.Module/Entity<Tab>:VhdlEntity         :VhdlEntity<CR>
+nmenu HDL.Vhdl\ Component<Tab>:CompoB           :CompoB<CR> 
+nmenu HDL.Verilog\ Instant<Tab>:InstantV        :InstantV<CR>
+nmenu HDL.Vhdl\ Testbench<Tab>:TbVhdl           :TbVhdl<CR>
+nmenu HDL.Verilog\ Testbench<Tab>:TbVerilog     :TbVerilog<CR>
 
 command     AddInfo     :call AddFileInformation()
 command     Acontent    :call AddContent()
@@ -74,8 +90,8 @@ command     VhdlEntity  :call Module_Entity_Build()
 command     ModSimComp  :call Model_Sim_Compile()
 command     CompoB      :call Component_Build("vhdl")
 command     InstantV    :call Component_Build("verilog")
-command     TbVHDVhdl   :call Tb_Vhdl_Build("vhdl")
-command     TbVHDVerilog    :call Tb_Vhdl_Build("verilog")
+command     TbVhdl      :call Tb_Vhdl_Build("vhdl")
+command     TbVerilog   :call Tb_Vhdl_Build("verilog")
 
 nmap <silent><F7> :ModSimComp<CR><CR>
 nmap <silent><F6> <Esc>:!vlib work<CR><CR>
@@ -361,131 +377,241 @@ endfunction
 function Get_Information_Of_Entity()
     " 保存初始位置，entity读取完成跳转回来
     exe "ks"
-    " Get the entity position
-    let first_line = search('\<entity\>.*\<is\>','w')
-    if first_line == 0
-        echo "Can't Find Start Entity."
-        return 0
-    endif
-    let last_line = searchpair('\<entity\>.*\<is\>','','\<end\>.*;','W')
-    if last_line == 0
-        echo "Can't Find End Entity."
-        return 0
-    endif
-    " entity name 
-    let line = getline(first_line)
-    let s:ent_name = substitute(line,'^\s*\<entity\>\s*',"","")
-    let s:ent_name = substitute(s:ent_name,'\s*\<is\>.*$',"","")
-    " 端口的首行和末行
-    call cursor(first_line,1)
-    let port_start_line = search('\<port\>','W',last_line)
-    let i = 1
-    while i
-        if getline(line('.')) =~ '^\s*--'
-            let port_start_line = search('\<port\>','W',last_line)
-            let i = 1
-        else
-            let i = 0
+    if Check_File_Type() == 1
+        " Get the entity position
+        let first_line = search('\<entity\>.*\<is\>','w')
+        if first_line == 0
+            echo "Can't Find Start Entity."
+            return 0
         endif
-    endwhile
-    call search('(','W')
-    exe "normal %"
-    let port_last_line = line('.')
-    " 检查generic的首行和末行
-    call cursor(first_line,1)
-    let s:generic_start_line = search('\<generic\>','W',last_line)
-    if getline(line('.')) =~ '^\s*--' 
-        let s:generic_start_line = search('\<generic\>','W',last_line)
-    endif
-    if s:generic_start_line != 0
+        let last_line = searchpair('\<entity\>.*\<is\>','','\<end\>.*;','W')
+        if last_line == 0
+            echo "Can't Find End Entity."
+            return 0
+        endif
+        " entity name 
+        let line = getline(first_line)
+        let s:ent_name = substitute(line,'^\s*\<entity\>\s*',"","")
+        let s:ent_name = substitute(s:ent_name,'\s*\<is\>.*$',"","")
+        " 端口的首行和末行
+        call cursor(first_line,1)
+        let port_start_line = search('\<port\>','W',last_line)
+        let i = 1
+        while i
+            if getline(line('.')) =~ '^\s*--'
+                let port_start_line = search('\<port\>','W',last_line)
+                let i = 1
+            else
+                let i = 0
+            endif
+        endwhile
         call search('(','W')
         exe "normal %"
-        let generic_last_line = line('.')
-        let s:generic_count = 0
-        call Get_Generic_Port(s:generic_start_line,generic_last_line)
-    endif
-    " 设置3个List来存放端口的信息
-    let s:port_cout = 0
-    let s:port = []
-    let s:type = []
-    let s:direction = []
-    let i = port_start_line
-    while i <= port_last_line
-        let line = getline(i)
-        " 将行尾的;和最后一行的);去掉
-        if i == port_last_line
-            let line = substitute(line,'\s*)\s*;.*$',"","")
-        else 
-            let line = substitute(line,'\s*;.*$',"","")
+        let port_last_line = line('.')
+        " 检查generic的首行和末行
+        call cursor(first_line,1)
+        let s:generic_start_line = search('\<generic\>','W',last_line)
+        if getline(line('.')) =~ '^\s*--' 
+            let s:generic_start_line = search('\<generic\>','W',last_line)
         endif
-        " 注释行跳过
-        if line =~ '^\s*--.*$'
-            let i = i + 1
-            continue
+        if s:generic_start_line != 0
+            call search('(','W')
+            exe "normal %"
+            let generic_last_line = line('.')
+            let s:generic_count = 0
+            call Get_Generic_Port(s:generic_start_line,generic_last_line)
         endif
-        " port和signal在一行时删去port(
-        if line =~ '^\s*\<port\>\s*(.*'
-            let line = substitute(line,'^\s*\<port\>\s*(\s*',"","")
-        endif
-        " 行首的(删掉
-        if line =~ '^\s*(.*$'
-            let line = substitute(line,'^\s*(\s*',"","")
-        endif
-        " 行尾有注释 先删去
-        if line =~ '^.*--.*$'
-            let line = substitute(line,'--.*$',"","")
-        endif
-        " 删掉行首的空格
-        let line = substitute(line,'^\s*',"","")
-        " 将信号按顺序存在list列表中
-        if line =~ '^.*:\s*\<in\>.*$' || line =~ '^.*:\s*\<out\>.*$'
-            let port_t = substitute(line,'\s*:.*$',"","")
-            if line =~ ':\s*\<in\>' 
-                let direction_t = "in"
-                let type_t = substitute(line,'^.*:\s*\<in\>\s*',"","")
-            elseif line =~ ':\s*\<out\>'
-                let direction_t = "out"
-                let type_t = substitute(line,'^.*:\s*\<out\>\s*',"","")
+        " 设置3个List来存放端口的信息
+        let s:port_cout = 0
+        let s:port = []
+        let s:type = []
+        let s:direction = []
+        let i = port_start_line
+        while i <= port_last_line
+            let line = getline(i)
+            " 将行尾的;和最后一行的);去掉
+            if i == port_last_line
+                let line = substitute(line,'\s*)\s*;.*$',"","")
+            else 
+                let line = substitute(line,'\s*;.*$',"","")
             endif
-            " 如果多个port在同一行
-            if port_t =~ ','
-                let port_t = substitute(port_t,'\s*',"","")
-                let comma_pos = [-1]
-                let j = 1
-                while 1
-                    let last_comma = stridx(port_t,",",comma_pos[j-1]+1)
-                    call add(comma_pos,last_comma)
-                    if comma_pos[j] == -1
-                        break
-                    endif
-                    let j = j + 1
-                endwhile  
-                let k = 0
-                while k < j 
-                    if k == j - 1
-                        call add(s:port,strpart(port_t,comma_pos[k]+1))
-                    else
-                        call add(s:port,strpart(port_t,comma_pos[k]+1,comma_pos[k+1]-comma_pos[k]-1))
-                    endif
+            " 注释行跳过
+            if line =~ '^\s*--.*$'
+                let i = i + 1
+                continue
+            endif
+            " port和signal在一行时删去port(
+            if line =~ '^\s*\<port\>\s*(.*'
+                let line = substitute(line,'^\s*\<port\>\s*(\s*',"","")
+            endif
+            " 行首的(删掉
+            if line =~ '^\s*(.*$'
+                let line = substitute(line,'^\s*(\s*',"","")
+            endif
+            " 行尾有注释 先删去
+            if line =~ '^.*--.*$'
+                let line = substitute(line,'--.*$',"","")
+            endif
+            " 删掉行首的空格
+            let line = substitute(line,'^\s*',"","")
+            " 将信号按顺序存在list列表中
+            if line =~ '^.*:\s*\<in\>.*$' || line =~ '^.*:\s*\<out\>.*$'
+                let port_t = substitute(line,'\s*:.*$',"","")
+                if line =~ ':\s*\<in\>' 
+                    let direction_t = "in"
+                    let type_t = substitute(line,'^.*:\s*\<in\>\s*',"","")
+                elseif line =~ ':\s*\<out\>'
+                    let direction_t = "out"
+                    let type_t = substitute(line,'^.*:\s*\<out\>\s*',"","")
+                elseif line =~ ':\s*\<inout\>'
+                    let direction_t = "inout"
+                    let type_t = substitute(line,'^.*:\s*\<inout\>\s*',"","")
+                endif
+                " 如果多个port在同一行
+                if port_t =~ ','
+                    let port_t = substitute(port_t,'\s*',"","g")
+                    let comma_pos = [-1]
+                    let j = 1
+                    while 1
+                        let last_comma = stridx(port_t,",",comma_pos[j-1]+1)
+                        call add(comma_pos,last_comma)
+                        if comma_pos[j] == -1
+                            break
+                        endif
+                        let j = j + 1
+                    endwhile  
+                    let k = 0
+                    while k < j 
+                        if k == j - 1
+                            call add(s:port,strpart(port_t,comma_pos[k]+1))
+                        else
+                            call add(s:port,strpart(port_t,comma_pos[k]+1,comma_pos[k+1]-comma_pos[k]-1))
+                        endif
+                        call add(s:direction,direction_t)
+                        call add(s:type,type_t)
+                        let s:port_cout = s:port_cout + 1
+                        let k = k + 1
+                    endwhile
+                else
+                    " 将端口信息存于List中
+                    call add(s:port,port_t)
                     call add(s:direction,direction_t)
                     call add(s:type,type_t)
                     let s:port_cout = s:port_cout + 1
-                    let k = k + 1
-                endwhile
-            else
-                " 将端口信息存于List中
-                call add(s:port,port_t)
-                call add(s:direction,direction_t)
-                call add(s:type,type_t)
-                let s:port_cout = s:port_cout + 1
+                endif
+            else 
+                let i = i + 1
+                continue
             endif
-        else 
             let i = i + 1
-            continue
-        endif
-        let i = i + 1
-    endwhile
+        endwhile
 
+    elseif Check_File_Type() == 2
+        " 找到文件module
+        let module_line = search('\<module\>','w')
+        while 1
+            if module_line == 0
+                echo "Can't Find The Module."
+                return 0
+            elseif getline(module_line) =~ '//' 
+                let module_line = search('\<module\>','w')
+            else
+                break
+            endif
+        endwhile
+        " 得到module的名字
+        let line = getline(module_line)
+        if line =~ '^.*(.*$'
+            let s:ent_name = substitute(line,'\s*(.*$',"","")
+        else 
+            let s:ent_name = substitute(line,'\s*$',"","")
+        endif
+        let s:ent_name = substitute(s:ent_name,'^\s*\<module\>\s*',"","")
+        " 寻找下一个出现的括号来找到端口列表的首行和尾行
+        if search("(",'W') 
+            let first_line = line('.')
+            exe "normal %"
+            let last_line = line('.')
+        elseif
+            return 0
+        endif
+        " 端口input，output等信息存于list--port_information中
+        let port_information = []
+        for line in getline(last_line,line('$'))
+            if line =~ '^\s*//'
+                continue
+            elseif line =~ '\<input\>' || line =~ '\<output\>' || line =~ '\<inout\>'
+                let line = substitute(line,'^\s*',"","")
+                let line = substitute(line,'\s*;.*$',"","")
+                call add(port_information,line)
+            endif
+        endfor
+        " 所有端口存于ports中
+        let ports = ''
+        for line in getline(first_line,last_line)
+            let line = substitute(line,'^.*(\s*',"","")
+            let line = substitute(line,'\s*)\s*;.*$',"","")
+            let ports = ports.line
+        endfor
+
+        " 去掉空格
+        let ports = substitute(ports,'\s*',"","g")
+        " 得到ports中每个逗号的位置，并加入list--comma_pos
+        let comma_pos = [-1]
+        let j = 1
+        while 1
+            let last_comma = stridx(ports,",",comma_pos[j-1]+1)
+            call add(comma_pos,last_comma)
+            if comma_pos[j] == -1
+                break
+            endif
+            let j = j + 1
+        endwhile  
+        " 将各个端口信息转成vhdl的方式存于list中
+        let k = 0
+        let s:port = []
+        let s:direction = []
+        let s:type = []
+        let s:port_cout = 0
+        " 端口名字port加入s:port中
+        while k < j 
+            if k == j - 1
+                let port = strpart(ports,comma_pos[k]+1) 
+            else
+                let port = strpart(ports,comma_pos[k]+1,comma_pos[k+1]-comma_pos[k]-1)
+            endif
+            call add(s:port,port)
+            " 在port_information中寻找port，如果找到，就将相应信息加入list
+            let num = match(port_information,port)
+            if num == -1
+                echo "port ".port."is not define"
+                return 0
+            elseif port_information[num] =~ '\<input\>'
+                call add(s:direction,"in")
+            elseif port_information[num] =~ '\<output\>'
+                call add(s:direction,"out")
+            elseif port_information[num] =~ '\<inout\>'
+                call add(s:direction,"inout")
+            endif
+            " 有长度信息的[x:y] 则转化成std_logic_vector(x downto y)存入s:type，如果没有则为std_logic
+            let len_start = stridx(port_information[num],"[")
+            if len_start != -1 
+                let len_end = stridx(port_information[num],"]")
+                let len = strpart(port_information[num],len_start,len_end-len_start+1)
+                let type = Change_to_vhdl_type(len)
+                call add(s:type,type)
+            else 
+                call add(s:type,"std_logic")
+            endif
+
+            let s:port_cout = s:port_cout + 1
+            let k = k + 1
+        endwhile
+        " 暂时不支持generic，设置generic_start_line = 0
+        let s:generic_start_line = 0
+    else 
+        return 0
+    endif
     " 跳转回刚刚标记的地方
     exe "'s"
     return 1
@@ -505,7 +631,7 @@ function Get_Generic_Port(start_line,last_line)
     while i <= a:last_line
         let line = getline(i)
         " 空格先删掉
-        let line = substitute(line,'\s*',"","")
+        let line = substitute(line,'\s*',"","g")
         " 注释行跳过
         if line =~ '^--.*$'
             let i = i + 1
@@ -546,15 +672,6 @@ function Get_Generic_Port(start_line,last_line)
             call add(s:generic_value,generic_value_t)
             call add(s:generic_type,generic_type_t)
         endif
-
-"        echo "pos_1= ".pos_1
-"        echo "pos_2= ".pos_2
-"        echo "generic_port_t= ".generic_port_t
-"        echo "generic_type_t= ".generic_type_t
-"        echo "generic_value_t= ".generic_value_t
-"        echo s:generic_port
-"        echo s:generic_value
-"        echo s:generic_type
         let i = i + 1
     endwhile
 
@@ -606,14 +723,26 @@ function Change_to_vlog_type(port_tp)
     return vlog_tp
 endfunction
 
-"------------------------------------------------------------------------
-"Function    : Generic_Part_Build(lang) 
-"Decription  :  
-"------------------------------------------------------------------------
+"-------------------------------------------------------------------------------
+" Function		: Change_to_vhdl_type(port_tp)	
+" Description	: port_tp is [x:y]	
+"                   return a string as std_logic_vector(x downto y)
+"-------------------------------------------------------------------------------
+function Change_to_vhdl_type(port_tp)
+    let port_tp = substitute(a:port_tp,'\s*',"","g")
+    let colon = stridx(port_tp,":")
+    let high_tp = strpart(port_tp,1,colon-1)
+    let low_tp = strpart(port_tp,colon+1,strlen(port_tp)-colon-2)
+"    echo "high_tp= ".high_tp
+"    echo "low_tp= ".low_tp
+    if high_tp > low_tp
+        let vhdl_tp = "std_logic_vector(".high_tp." downto ".low_tp.")"
+    else 
+        let vhdl_tp = "std_logic_vector(".high_tp." to ".low_tp.")"
+    endif
+    return vhdl_tp
+endfunction
 
-"function Generic_Part_Build(lang)
-"    if a:lang == "vhdl"
-"        let generic_part = "\tgeneric map (\n"
 
 "------------------------------------------------------------------------
 "Function    : Component_Part_Build(lang)
@@ -735,11 +864,8 @@ function Instant_Part_Build(lang)
         endwhile
     elseif a:lang == "verilog"
         let instant_part = "\t".s:ent_name
-        " ".s:ent_name." (\n"
-        "
         if s:generic_start_line != 0
             let i = 0
-            let abc = ""
             let instant_part = instant_part."\t#(\n"
             let parameter = ""
             while i < s:generic_count
@@ -768,9 +894,7 @@ function Instant_Part_Build(lang)
             endwhile
             let instant_part = parameter."\n".instant_part
         endif
-        
         let instant_part = instant_part."\t".s:ent_name." (\n"
-
         let i = 0
         while i < s:port_cout
             if strwidth(s:port[i])<3
@@ -826,6 +950,11 @@ function Inport_Part_Build(lang)
             endif
             let i = i + 1
         endwhile   
+        if inport_part == "\t-- Inputs\n"
+            let inport_part = ''
+        else 
+            let inport_part = inport_part."\n"
+        endif
     elseif a:lang == "verilog"
         let inport_part = "\t// Inputs\n"
         let i = 0
@@ -839,6 +968,11 @@ function Inport_Part_Build(lang)
             endif
             let i = i + 1
         endwhile
+        if inport_part == "\t// Inputs\n"
+            let inport_part = ''
+        else 
+            let inport_part = inport_part."\n"
+        endif
     else 
         return ''
     endif
@@ -870,6 +1004,11 @@ function Outport_Part_Build(lang)
             endif
             let i = i + 1
         endwhile   
+        if outport_part == "\t-- Outputs\n"
+            let outport_part = ''
+        else 
+            let outport_part = outport_part."\n"
+        endif
     elseif a:lang == "verilog"
         let outport_part = "\t// Outputs\n"
         let i = 0
@@ -883,10 +1022,69 @@ function Outport_Part_Build(lang)
             endif
             let i = i + 1
         endwhile
+        if outport_part == "\t// Outputs\n"
+            let outport_part = ''
+        else 
+            let outport_part = outport_part."\n"
+        endif
     else 
         return ''
     endif
     return outport_part
+endfunction
+"
+"------------------------------------------------------------------------
+"Function    : Inoutport_Part_Build(lang) 
+"Decription  : inoutport part 
+"------------------------------------------------------------------------
+function Inoutport_Part_Build(lang)
+    if a:lang == "vhdl"
+        let inoutport_part = "\t-- Inout\n"
+        let i = 0 
+        while i < s:port_cout 
+            if s:direction[i] == "inout"
+                if strwidth(s:port[i])<4
+                    let inoutport_part = inoutport_part."\tsignal\t".s:port[i]."\t\t\t\t: ".s:type[i]
+                elseif strwidth(s:port[i])<8 && strwidth(s:port[i])>=4
+                    let inoutport_part = inoutport_part."\tsignal\t".s:port[i]."\t\t\t: ".s:type[i]
+                elseif strwidth(s:port[i])>=8 && strwidth(s:port[i])<12
+                    let inoutport_part = inoutport_part."\tsignal\t".s:port[i]."\t\t: ".s:type[i]
+                elseif strwidth(s:port[i])>=12  && strwidth(s:port[i])<16
+                    let inoutport_part = inoutport_part."\tsignal\t".s:port[i]."\t: ".s:type[i]
+                elseif strwidth(s:port[i])>=16
+                    let inoutport_part = inoutport_part."\tsignal\t".s:port[i].": ".s:type[i]
+                endif
+                let inoutport_part = inoutport_part.";\n"
+            endif
+            let i = i + 1
+        endwhile   
+        if inoutport_part == "\t-- Inout\n"
+            let inoutport_part = ''
+        else 
+            let inoutport_part = inoutport_part."\n"
+        endif
+    elseif a:lang == "verilog"
+        let inoutport_part = "\t// Inout\n"
+        let i = 0
+        while i < s:port_cout 
+            if s:direction[i] == "inout"
+                if s:type[i] =~ '\<std_logic_vector\>'
+                    let inoutport_part = inoutport_part."\twire\t".Change_to_vlog_type(s:type[i])."\t".s:port[i].";\n"
+                else 
+                    let inoutport_part = inoutport_part."\twire\t\t\t".s:port[i].";\n"
+                endif
+            endif
+            let i = i + 1
+        endwhile
+        if inoutport_part == "\t// Inout\n"
+            let inoutport_part = ''
+        else 
+            let inoutport_part = inoutport_part."\n"
+        endif
+    else 
+        return ''
+    endif
+    return inoutport_part
 endfunction
 
 "------------------------------------------------------------------------------
@@ -899,16 +1097,9 @@ function Component_Build(type)
         echo "Do not set \"type\""
         return
     endif
-"    Check the file type
-    if Check_File_Type() != 1
-        echohl ErrorMsg
-        echo    "File type is Wrong!It is not a vhdl file..."
-        echohl None
-        return
-    endif
-    let s:bur_num = bufnr(expand("%"))
 "    get information of the entity
     if !Get_Information_Of_Entity() 
+        echo "Can't Get the information"
         return
     endif
 "    build the component information
@@ -917,10 +1108,11 @@ function Component_Build(type)
     elseif a:type == "verilog"
         let component_part = ''
     endif
-    let inport_part = Inport_Part_Build(a:type)."\n"
-    let outport_part = Outport_Part_Build(a:type)."\n"
-    let instant_part = Instant_Part_Build(a:type)."\n"
-    let all_part = component_part.inport_part.outport_part.instant_part
+    let inport_part = Inport_Part_Build(a:type)
+    let outport_part = Outport_Part_Build(a:type)
+    let inoutport_part = Inoutport_Part_Build(a:type)
+    let instant_part = Instant_Part_Build(a:type)
+    let all_part = component_part.inport_part.outport_part.inoutport_part.instant_part
 "    let @+ = all_part
     let @* = all_part
 "    build component window
@@ -969,6 +1161,7 @@ function Tb_Vhdl_Build(type)
     endif
 "    get information of the entity
     if !Get_Information_Of_Entity() 
+        echo "Can't Get the information"
         return
     endif
     if !exists('clk')
@@ -1012,11 +1205,12 @@ function Tb_Vhdl_Build(type)
     endif
      "    component part
     let component_part = Component_Part_Build(a:type)
-    let inport_part = Inport_Part_Build(a:type)."\n"
-    let outport_part = Outport_Part_Build(a:type)."\n"
+    let inport_part = Inport_Part_Build(a:type)
+    let outport_part = Outport_Part_Build(a:type)
+    let inoutport_part = Inoutport_Part_Build(a:type)
     let instant_part = Instant_Part_Build(a:type)
     let all_part = entity_part.architecture_part.component_part.inport_part.outport_part
-                \.constant_part.instant_part.clock_part.simulus_part
+                \.inoutport_part.constant_part.instant_part.clock_part.simulus_part
 "    检测文件是否已经存在 
     if filewritable(tb_file_name) 
         let choice = confirm("The testbench file has been exist.\nSelect \"Open\" to open existed file.".
